@@ -1,4 +1,12 @@
 import { useState } from "react";
+import Box from "@mui/material/Box";
+import Stack from "@mui/material/Stack";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Typography from "@mui/material/Typography";
+import Button from "@mui/material/Button";
+import TextField from "@mui/material/TextField";
+import Alert from "@mui/material/Alert";
 import { api } from "../api/client";
 import { useFetch } from "../api/useFetch";
 import { useIdentity } from "../identity/IdentityContext";
@@ -38,107 +46,126 @@ export function ApprovalsPage() {
     }
   }
 
-  if (!currentEmployee) return <p>Loading…</p>;
+  if (!currentEmployee) return <Typography>Loading…</Typography>;
 
   return (
-    <div>
-      <h1 style={{ fontSize: 22, marginBottom: 16 }}>Approvals</h1>
-      {error && <p style={{ color: "#991b1b", marginBottom: 12 }}>{error}</p>}
-
-      {currentEmployee.isManCom && needsClearance && needsClearance.length > 0 && (
-        <section style={{ marginBottom: 28 }}>
-          <h2 style={{ fontSize: 16, marginBottom: 10 }}>
-            Emergency-work attendance clearance (reason G — separate gate before booking approval)
-          </h2>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {needsClearance.map((r) => (
-              <div key={r.id} style={card}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <div>
-                    <strong>{r.employee?.name}</strong> — {r.journeyFrom} → {r.journeyTo}
-                    <div style={{ fontSize: 12, color: "#6b7280" }}>
-                      {new Date(r.travelDate).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <button
-                    disabled={busyId === r.id}
-                    onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/clear-work-attendance`))}
-                    style={btn("#92400e")}
-                  >
-                    Clear to attend work
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+    <Box>
+      <Typography variant="h5" sx={{ mb: 2, fontWeight: 700 }}>
+        Approvals
+      </Typography>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
       )}
 
-      <section>
-        <h2 style={{ fontSize: 16, marginBottom: 10 }}>Pending booking approvals</h2>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {pending?.length === 0 && <p style={{ color: "#6b7280" }}>Nothing pending your approval.</p>}
+      {currentEmployee.isManCom && needsClearance && needsClearance.length > 0 && (
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 700 }}>
+            Emergency-work attendance clearance (reason G — separate gate before booking approval)
+          </Typography>
+          <Stack spacing={1.25}>
+            {needsClearance.map((r) => (
+              <Card key={r.id} variant="outlined">
+                <CardContent
+                  sx={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    "&:last-child": { pb: 2 },
+                  }}
+                >
+                  <Box>
+                    <Typography sx={{ fontWeight: 700 }}>
+                      {r.employee?.name} — {r.journeyFrom} → {r.journeyTo}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {new Date(r.travelDate).toLocaleDateString()}
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    size="small"
+                    disabled={busyId === r.id}
+                    onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/clear-work-attendance`))}
+                  >
+                    Clear to attend work
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        </Box>
+      )}
+
+      <Box>
+        <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 700 }}>
+          Pending booking approvals
+        </Typography>
+        <Stack spacing={1.25}>
+          {pending?.length === 0 && (
+            <Typography color="text.secondary">Nothing pending your approval.</Typography>
+          )}
           {pending?.map((r) => (
-            <div key={r.id} style={card}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <strong>{r.employee?.name}</strong>
-                  <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 8 }}>
-                    {r.reasonCode.replace(/_/g, " ")}
-                  </span>
-                </div>
-                <StatusBadge status={r.status} />
-              </div>
-              <p style={{ fontSize: 13, color: "#374151", margin: "6px 0" }}>
-                {r.journeyFrom} → {r.journeyTo} · {new Date(r.travelDate).toLocaleDateString()} ·{" "}
-                {new Date(r.pickupTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                {r.lateBooking && <span style={{ color: "#92400e" }}> · late booking</span>}
-              </p>
-              {r.justification && <p style={{ fontSize: 13, color: "#374151" }}>Justification: {r.justification}</p>}
+            <Card key={r.id} variant="outlined">
+              <CardContent>
+                <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <Box>
+                    <Typography component="span" sx={{ fontWeight: 700 }}>
+                      {r.employee?.name}
+                    </Typography>
+                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                      {r.reasonCode.replace(/_/g, " ")}
+                    </Typography>
+                  </Box>
+                  <StatusBadge status={r.status} />
+                </Stack>
 
-              <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <button
-                  disabled={busyId === r.id}
-                  onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/approve`))}
-                  style={btn("#047857")}
-                >
-                  Approve
-                </button>
-                <input
-                  placeholder="Rejection reason"
-                  value={rejectReason[r.id] ?? ""}
-                  onChange={(e) => setRejectReason((s) => ({ ...s, [r.id]: e.target.value }))}
-                  style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13 }}
-                />
-                <button
-                  disabled={busyId === r.id || !rejectReason[r.id]}
-                  onClick={() =>
-                    runAction(r.id, () => api.post(`/requests/${r.id}/reject`, { reason: rejectReason[r.id] }))
-                  }
-                  style={btn("#991b1b")}
-                >
-                  Reject
-                </button>
-              </div>
-            </div>
+                <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>
+                  {r.journeyFrom} → {r.journeyTo} · {new Date(r.travelDate).toLocaleDateString()} ·{" "}
+                  {new Date(r.pickupTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {r.lateBooking && <Box component="span" color="warning.main"> · late booking</Box>}
+                </Typography>
+                {r.justification && (
+                  <Typography variant="body2" color="text.secondary">
+                    Justification: {r.justification}
+                  </Typography>
+                )}
+
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap", mt: 1.5 }}>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="small"
+                    disabled={busyId === r.id}
+                    onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/approve`))}
+                  >
+                    Approve
+                  </Button>
+                  <TextField
+                    size="small"
+                    placeholder="Rejection reason"
+                    value={rejectReason[r.id] ?? ""}
+                    onChange={(e) => setRejectReason((s) => ({ ...s, [r.id]: e.target.value }))}
+                  />
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    size="small"
+                    disabled={busyId === r.id || !rejectReason[r.id]}
+                    onClick={() =>
+                      runAction(r.id, () => api.post(`/requests/${r.id}/reject`, { reason: rejectReason[r.id] }))
+                    }
+                  >
+                    Reject
+                  </Button>
+                </Stack>
+              </CardContent>
+            </Card>
           ))}
-        </div>
-      </section>
-    </div>
+        </Stack>
+      </Box>
+    </Box>
   );
-}
-
-const card: React.CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 10, padding: 14, background: "#fff" };
-
-function btn(color: string): React.CSSProperties {
-  return {
-    padding: "6px 14px",
-    borderRadius: 6,
-    border: "none",
-    background: color,
-    color: "#fff",
-    fontWeight: 600,
-    fontSize: 13,
-    cursor: "pointer",
-  };
 }

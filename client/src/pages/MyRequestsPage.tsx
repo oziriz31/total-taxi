@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import Box from "@mui/material/Box";
+import Stack from "@mui/material/Stack";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Typography from "@mui/material/Typography";
+import Button from "@mui/material/Button";
+import TextField from "@mui/material/TextField";
+import Alert from "@mui/material/Alert";
 import { api } from "../api/client";
 import { useFetch } from "../api/useFetch";
 import { useIdentity } from "../identity/IdentityContext";
@@ -32,138 +40,150 @@ export function MyRequestsPage() {
     }
   }
 
-  if (!currentEmployee) return <p>Loading…</p>;
+  if (!currentEmployee) return <Typography>Loading…</Typography>;
 
   return (
-    <div>
-      <h1 style={{ fontSize: 22, marginBottom: 16 }}>My Taxi Requests</h1>
-      {actionError && <p style={{ color: "#991b1b", marginBottom: 12 }}>{actionError}</p>}
+    <Box>
+      <Typography variant="h5" sx={{ mb: 2, fontWeight: 700 }}>
+        My Taxi Requests
+      </Typography>
+      {actionError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+          {actionError}
+        </Alert>
+      )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {requests?.length === 0 && <p style={{ color: "#6b7280" }}>No requests yet.</p>}
+      <Stack spacing={1.5}>
+        {requests?.length === 0 && (
+          <Card variant="outlined">
+            <CardContent sx={{ textAlign: "center", py: 4 }}>
+              <Typography color="text.secondary" sx={{ mb: 2 }}>
+                No requests yet.
+              </Typography>
+              <Button component={Link} to="/new-request" variant="contained">
+                Create your first request
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {requests?.map((r) => (
-          <div
-            key={r.id}
-            style={{
-              border: r.id === highlight ? "2px solid #1d4ed8" : "1px solid #e5e7eb",
-              borderRadius: 10,
-              padding: 16,
-              background: "#fff",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <strong>
-                  {r.journeyFrom} → {r.journeyTo}
-                </strong>
-                <span style={{ marginLeft: 10, fontSize: 12, color: "#6b7280" }}>
-                  {new Date(r.travelDate).toLocaleDateString()} · {new Date(r.pickupTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </span>
-              </div>
-              <StatusBadge status={r.status} />
-            </div>
+          <Card key={r.id} variant="outlined" sx={r.id === highlight ? { borderColor: "primary.main", borderWidth: 2 } : undefined}>
+            <CardContent>
+              <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+                <Box>
+                  <Typography sx={{ fontWeight: 700 }} component="span">
+                    {r.journeyFrom} → {r.journeyTo}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 1.5 }}>
+                    {new Date(r.travelDate).toLocaleDateString()} ·{" "}
+                    {new Date(r.pickupTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </Typography>
+                </Box>
+                <StatusBadge status={r.status} />
+              </Stack>
 
-            <p style={{ fontSize: 13, color: "#374151", marginTop: 6 }}>
-              Reason: {r.reasonCode.replace(/_/g, " ")}
-              {r.lateBooking && <span style={{ color: "#92400e" }}> · submitted after policy deadline</span>}
-            </p>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Reason: {r.reasonCode.replace(/_/g, " ")}
+                {r.lateBooking && <Box component="span" color="warning.main"> · submitted after policy deadline</Box>}
+              </Typography>
 
-            {r.reasonCode === "G_EMERGENCY_WORK" && r.status === "DRAFT" && (
-              <p style={{ fontSize: 12, color: r.workAttendanceClearedAt ? "#065f46" : "#92400e" }}>
-                Work-attendance clearance: {r.workAttendanceClearedAt ? "cleared" : "awaiting ManCom clearance"}
-              </p>
-            )}
+              {r.reasonCode === "G_EMERGENCY_WORK" && r.status === "DRAFT" && (
+                <Typography variant="caption" sx={{ display: "block", color: r.workAttendanceClearedAt ? "success.main" : "warning.main" }}>
+                  Work-attendance clearance: {r.workAttendanceClearedAt ? "cleared" : "awaiting ManCom clearance"}
+                </Typography>
+              )}
 
-            {r.rejectionReason && (
-              <p style={{ fontSize: 13, color: "#991b1b" }}>Rejected: {r.rejectionReason}</p>
-            )}
-            {r.taxiContactNumber && (
-              <p style={{ fontSize: 13, color: "#374151" }}>Taxi contact: {r.taxiContactNumber}</p>
-            )}
-            {r.personalUseCharge && (
-              <p style={{ fontSize: 13, color: "#7f1d1d" }}>
-                Personal-use charge: {r.personalUseCharge.amount} ({r.personalUseCharge.status})
-              </p>
-            )}
+              {r.rejectionReason && (
+                <Alert severity="error" sx={{ mt: 1.5 }}>
+                  Rejected: {r.rejectionReason}
+                </Alert>
+              )}
+              {r.taxiContactNumber && (
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  Taxi contact: {r.taxiContactNumber}
+                </Typography>
+              )}
+              {r.personalUseCharge && (
+                <Alert severity="error" sx={{ mt: 1.5 }}>
+                  Personal-use charge: {r.personalUseCharge.amount} ({r.personalUseCharge.status})
+                </Alert>
+              )}
 
-            <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
-              {r.status === "DRAFT" && (
-                <>
-                  <button
-                    disabled={busyId === r.id || (r.reasonCode === "G_EMERGENCY_WORK" && !r.workAttendanceClearedAt)}
-                    onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/submit`))}
-                    style={btn("#1d4ed8")}
-                  >
-                    Submit for Approval
-                  </button>
-                  <button
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap", mt: 2 }}>
+                {r.status === "DRAFT" && (
+                  <>
+                    <Button
+                      variant="contained"
+                      size="small"
+                      disabled={busyId === r.id || (r.reasonCode === "G_EMERGENCY_WORK" && !r.workAttendanceClearedAt)}
+                      onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/submit`))}
+                    >
+                      Submit for Approval
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="inherit"
+                      size="small"
+                      disabled={busyId === r.id}
+                      onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/cancel`))}
+                    >
+                      Cancel
+                    </Button>
+                  </>
+                )}
+
+                {r.status === "PENDING_APPROVAL" && (
+                  <Button
+                    variant="outlined"
+                    color="inherit"
+                    size="small"
                     disabled={busyId === r.id}
                     onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/cancel`))}
-                    style={btn("#6b7280")}
                   >
                     Cancel
-                  </button>
-                </>
-              )}
+                  </Button>
+                )}
 
-              {r.status === "PENDING_APPROVAL" && (
-                <button
-                  disabled={busyId === r.id}
-                  onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/cancel`))}
-                  style={btn("#6b7280")}
-                >
-                  Cancel
-                </button>
-              )}
+                {r.status === "APPROVED" && (
+                  <>
+                    <TextField
+                      size="small"
+                      placeholder="Taxi contact number"
+                      value={contactInputs[r.id] ?? ""}
+                      onChange={(e) => setContactInputs((c) => ({ ...c, [r.id]: e.target.value }))}
+                    />
+                    <Button
+                      variant="contained"
+                      size="small"
+                      disabled={busyId === r.id || !contactInputs[r.id]}
+                      onClick={() =>
+                        runAction(r.id, () =>
+                          api.post(`/requests/${r.id}/book`, { taxiContactNumber: contactInputs[r.id] })
+                        )
+                      }
+                    >
+                      Confirm Booking
+                    </Button>
+                  </>
+                )}
 
-              {r.status === "APPROVED" && (
-                <>
-                  <input
-                    placeholder="Taxi contact number"
-                    value={contactInputs[r.id] ?? ""}
-                    onChange={(e) => setContactInputs((c) => ({ ...c, [r.id]: e.target.value }))}
-                    style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13 }}
-                  />
-                  <button
-                    disabled={busyId === r.id || !contactInputs[r.id]}
-                    onClick={() =>
-                      runAction(r.id, () =>
-                        api.post(`/requests/${r.id}/book`, { taxiContactNumber: contactInputs[r.id] })
-                      )
-                    }
-                    style={btn("#1d4ed8")}
+                {r.status === "BOOKED" && (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="small"
+                    disabled={busyId === r.id}
+                    onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/complete`))}
                   >
-                    Confirm Booking
-                  </button>
-                </>
-              )}
-
-              {r.status === "BOOKED" && (
-                <button
-                  disabled={busyId === r.id}
-                  onClick={() => runAction(r.id, () => api.post(`/requests/${r.id}/complete`))}
-                  style={btn("#047857")}
-                >
-                  Mark Trip Completed
-                </button>
-              )}
-            </div>
-          </div>
+                    Mark Trip Completed
+                  </Button>
+                )}
+              </Stack>
+            </CardContent>
+          </Card>
         ))}
-      </div>
-    </div>
+      </Stack>
+    </Box>
   );
-}
-
-function btn(color: string): React.CSSProperties {
-  return {
-    padding: "6px 14px",
-    borderRadius: 6,
-    border: "none",
-    background: color,
-    color: "#fff",
-    fontWeight: 600,
-    fontSize: 13,
-    cursor: "pointer",
-  };
 }

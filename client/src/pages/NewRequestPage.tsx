@@ -1,6 +1,19 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import Box from "@mui/material/Box";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import Alert from "@mui/material/Alert";
+import TextField from "@mui/material/TextField";
+import MenuItem from "@mui/material/MenuItem";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import Checkbox from "@mui/material/Checkbox";
+import Button from "@mui/material/Button";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import type { Dayjs } from "dayjs";
 import { api } from "../api/client";
 import { useFetch } from "../api/useFetch";
 import { useIdentity } from "../identity/IdentityContext";
@@ -10,8 +23,8 @@ const emptyForm = {
   reasonCode: "" as ReasonCode | "",
   journeyFrom: "",
   journeyTo: "",
-  travelDate: "",
-  pickupTime: "",
+  travelDate: null as Dayjs | null,
+  pickupTime: null as Dayjs | null,
   declarationConfirmed: false,
   justification: "",
 };
@@ -33,7 +46,7 @@ export function NewRequestPage() {
 
   const selectedMeta = reasonCodes?.find((r) => r.code === form.reasonCode);
 
-  if (!currentEmployee) return <p>Loading…</p>;
+  if (!currentEmployee) return <Typography>Loading…</Typography>;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -47,18 +60,23 @@ export function NewRequestPage() {
       setError("You must confirm that all alternative transport options have been exhausted.");
       return;
     }
+    if (!form.travelDate || !form.pickupTime) {
+      setError("Please select a travel date and pick-up time.");
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const pickupDateTime = `${form.travelDate}T${form.pickupTime}:00`;
+      const dateStr = form.travelDate.format("YYYY-MM-DD");
+      const timeStr = form.pickupTime.format("HH:mm:ss");
       const created = await api.post<TaxiBookingRequest>("/requests", {
         reasonCode: form.reasonCode,
         declarationConfirmed: form.declarationConfirmed,
         justification: form.justification || undefined,
         journeyFrom: form.journeyFrom,
         journeyTo: form.journeyTo,
-        travelDate: `${form.travelDate}T00:00:00`,
-        pickupTime: pickupDateTime,
+        travelDate: `${dateStr}T00:00:00`,
+        pickupTime: `${dateStr}T${timeStr}`,
       });
       navigate(`/my-requests?highlight=${created.id}`);
     } catch (err: any) {
@@ -69,166 +87,122 @@ export function NewRequestPage() {
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <h1 style={{ fontSize: 22, marginBottom: 4 }}>Taxi Booking Form</h1>
-      <p
-        style={{
-          background: "#fee2e2",
-          color: "#991b1b",
-          fontWeight: 600,
-          fontSize: 13,
-          padding: "8px 12px",
-          borderRadius: 6,
-          marginBottom: 20,
-        }}
-      >
+    <Box sx={{ maxWidth: 640 }}>
+      <Typography variant="h5" sx={{ mb: 2, fontWeight: 700 }}>
+        Taxi Booking Form
+      </Typography>
+
+      <Alert severity="error" variant="filled" sx={{ mb: 3, fontWeight: 600 }}>
         Taxi services are strictly for business use only. Personal use is prohibited.
-      </p>
+      </Alert>
 
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={fieldRow}>
-          <Field label="Employee Name">
-            <input value={currentEmployee.name} disabled style={input} />
-          </Field>
-          <Field label="Position">
-            <input value={currentEmployee.position} disabled style={input} />
-          </Field>
-        </div>
-        <Field label="Section / Dept.">
-          <input value={currentEmployee.department} disabled style={input} />
-        </Field>
+      <Paper variant="outlined" sx={{ p: 3 }}>
+        <Box component="form" onSubmit={handleSubmit}>
+          <Stack spacing={2.5}>
+            <Stack direction="row" spacing={2}>
+              <TextField label="Employee Name" value={currentEmployee.name} disabled fullWidth />
+              <TextField label="Position" value={currentEmployee.position} disabled fullWidth />
+            </Stack>
+            <TextField label="Section / Dept." value={currentEmployee.department} disabled fullWidth />
 
-        <Field label="Reason">
-          <select
-            value={form.reasonCode}
-            onChange={(e) => setForm((f) => ({ ...f, reasonCode: e.target.value as ReasonCode }))}
-            style={input}
-            required
-          >
-            <option value="">Select a reason…</option>
-            {reasonCodes?.map((r) => (
-              <option key={r.code} value={r.code}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-          {selectedMeta && (
-            <p style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>{selectedMeta.description}</p>
-          )}
-        </Field>
-
-        {selectedMeta?.code === "H_EXCEPTIONAL_CASE" && (
-          <Field label="Justification">
-            <textarea
-              value={form.justification}
-              onChange={(e) => setForm((f) => ({ ...f, justification: e.target.value }))}
-              style={{ ...input, minHeight: 70 }}
+            <TextField
+              select
+              label="Reason"
+              value={form.reasonCode}
+              onChange={(e) => setForm((f) => ({ ...f, reasonCode: e.target.value as ReasonCode }))}
+              helperText={selectedMeta?.description}
               required
-            />
-          </Field>
-        )}
+              fullWidth
+            >
+              <MenuItem value="" disabled={!reasonCodes}>
+                {reasonCodes ? "Select a reason…" : "Loading reasons…"}
+              </MenuItem>
+              {reasonCodes?.map((r) => (
+                <MenuItem key={r.code} value={r.code}>
+                  {r.label}
+                </MenuItem>
+              ))}
+            </TextField>
 
-        {selectedMeta?.requiresDeclaration && (
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 14 }}>
-            <input
-              type="checkbox"
-              checked={form.declarationConfirmed}
-              onChange={(e) => setForm((f) => ({ ...f, declarationConfirmed: e.target.checked }))}
-              style={{ marginTop: 3 }}
-            />
-            I confirm that all alternative transport options have been exhausted prior to requesting a taxi.
-          </label>
-        )}
+            {selectedMeta?.code === "H_EXCEPTIONAL_CASE" && (
+              <TextField
+                label="Justification"
+                value={form.justification}
+                onChange={(e) => setForm((f) => ({ ...f, justification: e.target.value }))}
+                multiline
+                rows={3}
+                required
+                fullWidth
+              />
+            )}
 
-        <div style={fieldRow}>
-          <Field label="From">
-            <input
-              value={form.journeyFrom}
-              onChange={(e) => setForm((f) => ({ ...f, journeyFrom: e.target.value }))}
-              style={input}
-              required
-            />
-          </Field>
-          <Field label="To">
-            <input
-              value={form.journeyTo}
-              onChange={(e) => setForm((f) => ({ ...f, journeyTo: e.target.value }))}
-              style={input}
-              required
-            />
-          </Field>
-        </div>
+            {selectedMeta?.requiresDeclaration && (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={form.declarationConfirmed}
+                    onChange={(e) => setForm((f) => ({ ...f, declarationConfirmed: e.target.checked }))}
+                  />
+                }
+                label="I confirm that all alternative transport options have been exhausted prior to requesting a taxi."
+              />
+            )}
 
-        <div style={fieldRow}>
-          <Field label="Date">
-            <input
-              type="date"
-              value={form.travelDate}
-              onChange={(e) => setForm((f) => ({ ...f, travelDate: e.target.value }))}
-              style={input}
-              required
-            />
-          </Field>
-          <Field label="Pick-up Time">
-            <input
-              type="time"
-              value={form.pickupTime}
-              onChange={(e) => setForm((f) => ({ ...f, pickupTime: e.target.value }))}
-              style={input}
-              required
-            />
-          </Field>
-        </div>
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label="From"
+                value={form.journeyFrom}
+                onChange={(e) => setForm((f) => ({ ...f, journeyFrom: e.target.value }))}
+                required
+                fullWidth
+              />
+              <TextField
+                label="To"
+                value={form.journeyTo}
+                onChange={(e) => setForm((f) => ({ ...f, journeyTo: e.target.value }))}
+                required
+                fullWidth
+              />
+            </Stack>
 
-        {selectedMeta?.requiresManComApprover && (
-          <p style={{ fontSize: 13, color: "#92400e", background: "#fef3c7", padding: "8px 12px", borderRadius: 6 }}>
-            This reason requires approval from a ManCom member{selectedMeta.requiresWorkAttendanceClearance
-              ? " and separate ManCom clearance to attend work before the taxi can be booked"
-              : ""}
-            .
-          </p>
-        )}
+            <Stack direction="row" spacing={2}>
+              <DatePicker
+                label="Date"
+                value={form.travelDate}
+                onChange={(value) => setForm((f) => ({ ...f, travelDate: value }))}
+                slotProps={{ textField: { required: true, fullWidth: true } }}
+              />
+              <TimePicker
+                label="Pick-up Time"
+                value={form.pickupTime}
+                onChange={(value) => setForm((f) => ({ ...f, pickupTime: value }))}
+                slotProps={{ textField: { required: true, fullWidth: true } }}
+              />
+            </Stack>
 
-        {error && <p style={{ color: "#991b1b", fontSize: 14 }}>{error}</p>}
+            {selectedMeta?.requiresManComApprover && (
+              <Alert severity="warning">
+                This reason requires approval from a ManCom member
+                {selectedMeta.requiresWorkAttendanceClearance
+                  ? " and separate ManCom clearance to attend work before the taxi can be booked"
+                  : ""}
+                .
+              </Alert>
+            )}
 
-        <button type="submit" disabled={submitting} style={primaryButton}>
-          {submitting ? "Saving…" : "Save Draft"}
-        </button>
-        <p style={{ fontSize: 12, color: "#6b7280" }}>
-          Saved as a draft first — submit it for N+1/ManCom approval from "My Requests".
-        </p>
-      </form>
-    </div>
+            {error && <Alert severity="error">{error}</Alert>}
+
+            <Box>
+              <Button type="submit" variant="contained" disabled={submitting} size="large">
+                {submitting ? "Saving…" : "Save Draft"}
+              </Button>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+                Saved as a draft first — submit it for N+1/ManCom approval from "My Requests".
+              </Typography>
+            </Box>
+          </Stack>
+        </Box>
+      </Paper>
+    </Box>
   );
 }
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600, flex: 1 }}>
-      {label}
-      {children}
-    </label>
-  );
-}
-
-const fieldRow: React.CSSProperties = { display: "flex", gap: 16 };
-
-const input: React.CSSProperties = {
-  padding: "8px 10px",
-  borderRadius: 6,
-  border: "1px solid #d1d5db",
-  fontSize: 14,
-  fontWeight: 400,
-};
-
-const primaryButton: React.CSSProperties = {
-  padding: "10px 18px",
-  borderRadius: 8,
-  border: "none",
-  background: "#1d4ed8",
-  color: "#fff",
-  fontWeight: 600,
-  fontSize: 14,
-  cursor: "pointer",
-  alignSelf: "flex-start",
-};

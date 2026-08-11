@@ -1,9 +1,30 @@
 import { useState } from "react";
+import Box from "@mui/material/Box";
+import Stack from "@mui/material/Stack";
+import Paper from "@mui/material/Paper";
+import Typography from "@mui/material/Typography";
+import Button from "@mui/material/Button";
+import TextField from "@mui/material/TextField";
+import MenuItem from "@mui/material/MenuItem";
+import Alert from "@mui/material/Alert";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import List from "@mui/material/List";
+import ListItemButton from "@mui/material/ListItemButton";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
+import { DataGrid } from "@mui/x-data-grid";
+import type { GridColDef } from "@mui/x-data-grid";
 import { api } from "../api/client";
 import { useFetch } from "../api/useFetch";
 import { useIdentity } from "../identity/IdentityContext";
-import type { InvoiceBatch, PersonalUseCharge, TaxiBookingRequest } from "../api/types";
+import type { InvoiceBatch, InvoiceLine, PersonalUseCharge, TaxiBookingRequest } from "../api/types";
 import { StatusBadge } from "../components/StatusBadge";
+
+// Rs X,XXX.XX — see docs/ui-ux-design-requirements.md section 9 (currency
+// formatting was previously a raw float everywhere).
+function formatCurrency(amount: number) {
+  return `Rs ${amount.toLocaleString("en-MU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 export function HrMonitoringPage() {
   const { currentEmployee } = useIdentity();
@@ -60,65 +81,280 @@ export function HrMonitoringPage() {
     {}
   );
 
+  const invoiceLineColumns: GridColDef<InvoiceLine>[] = [
+    { field: "date", headerName: "Date", width: 110, valueGetter: (_v, row) => new Date(row.date).toLocaleDateString() },
+    { field: "fromLocation", headerName: "From", flex: 1, minWidth: 140 },
+    { field: "toLocation", headerName: "To", flex: 1, minWidth: 140 },
+    {
+      field: "amount",
+      headerName: "Amount",
+      width: 120,
+      align: "right",
+      headerAlign: "right",
+      valueGetter: (_v, row) => formatCurrency(row.amount),
+    },
+    {
+      field: "waitingTimeCharge",
+      headerName: "Waiting",
+      width: 110,
+      align: "right",
+      headerAlign: "right",
+      valueGetter: (_v, row) => formatCurrency(row.waitingTimeCharge),
+    },
+    {
+      field: "matchStatus",
+      headerName: "Match",
+      width: 180,
+      renderCell: ({ row }) =>
+        row.matchStatus === "MATCHED" ? (
+          <Typography variant="body2" color="success.main">
+            {row.matchedRequest?.employee?.name}
+          </Typography>
+        ) : (
+          <Typography variant="body2" color={row.matchStatus === "DISPUTED" ? "error.main" : "warning.main"}>
+            {row.matchStatus}
+          </Typography>
+        ),
+    },
+    {
+      field: "actions",
+      headerName: "",
+      width: 260,
+      sortable: false,
+      filterable: false,
+      renderCell: ({ row }) =>
+        row.matchStatus !== "MATCHED" ? (
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", py: 1 }}>
+            <TextField
+              size="small"
+              placeholder="Request id"
+              value={matchInputs[row.id] ?? ""}
+              onChange={(e) => setMatchInputs((m) => ({ ...m, [row.id]: e.target.value }))}
+              sx={{ width: 110 }}
+            />
+            <Button
+              size="small"
+              variant="contained"
+              disabled={busy || !matchInputs[row.id]}
+              onClick={() => withBusy(() => api.post(`/invoices/lines/${row.id}/match`, { requestId: matchInputs[row.id] }))}
+            >
+              Match
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              color="error"
+              disabled={busy}
+              onClick={() => withBusy(() => api.post(`/invoices/lines/${row.id}/dispute`))}
+            >
+              Dispute
+            </Button>
+          </Stack>
+        ) : null,
+    },
+  ];
+
+  const requestColumns: GridColDef<TaxiBookingRequest>[] = [
+    { field: "employee", headerName: "Employee", width: 160, valueGetter: (_v, row) => row.employee?.name ?? "" },
+    {
+      field: "journey",
+      headerName: "Journey",
+      flex: 1,
+      minWidth: 200,
+      valueGetter: (_v, row) => `${row.journeyFrom} → ${row.journeyTo}`,
+    },
+    {
+      field: "status",
+      headerName: "Status",
+      width: 190,
+      renderCell: ({ row }) => <StatusBadge status={row.status} />,
+    },
+    {
+      field: "id",
+      headerName: "Request ID",
+      width: 140,
+      renderCell: ({ row }) => (
+        <Typography variant="caption" sx={{ fontFamily: "monospace" }}>
+          {row.id}
+        </Typography>
+      ),
+    },
+    {
+      field: "actions",
+      headerName: "",
+      width: 150,
+      sortable: false,
+      filterable: false,
+      renderCell: ({ row }) =>
+        row.status !== "FLAGGED_FOR_REVIEW" ? (
+          <Button
+            size="small"
+            variant="contained"
+            color="warning"
+            disabled={busy}
+            onClick={() =>
+              withBusy(async () => {
+                await api.post(`/requests/${row.id}/flag-for-review`);
+                reloadCompleted();
+              })
+            }
+          >
+            Flag for review
+          </Button>
+        ) : (
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            disabled={busy}
+            onClick={() =>
+              withBusy(async () => {
+                await api.post(`/requests/${row.id}/clear-review`);
+                reloadCompleted();
+              })
+            }
+          >
+            Clear
+          </Button>
+        ),
+    },
+  ];
+
+  const chargeColumns: GridColDef<PersonalUseCharge>[] = [
+    { field: "employee", headerName: "Employee", width: 160, valueGetter: (_v, row) => row.employee?.name ?? "" },
+    {
+      field: "amount",
+      headerName: "Amount",
+      width: 130,
+      align: "right",
+      headerAlign: "right",
+      valueGetter: (_v, row) => formatCurrency(row.amount),
+    },
+    {
+      field: "recoveryMethod",
+      headerName: "Method",
+      width: 160,
+      valueGetter: (_v, row) => row.recoveryMethod.replace("_", " "),
+    },
+    { field: "status", headerName: "Status", width: 120 },
+    {
+      field: "disciplinaryFlag",
+      headerName: "Disciplinary",
+      width: 140,
+      renderCell: ({ row }) =>
+        row.disciplinaryFlag ? (
+          <Typography variant="body2" color="error.main">
+            ⚠ repeat abuse
+          </Typography>
+        ) : null,
+    },
+    {
+      field: "actions",
+      headerName: "",
+      width: 150,
+      sortable: false,
+      filterable: false,
+      renderCell: ({ row }) =>
+        row.status === "PENDING" ? (
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            disabled={busy}
+            onClick={() =>
+              withBusy(async () => {
+                await api.patch(`/personal-use-charges/${row.id}/recover`);
+                reloadCharges();
+              })
+            }
+          >
+            Mark recovered
+          </Button>
+        ) : null,
+    },
+  ];
+
+  const flaggedRequests = completedRequests?.filter((r) => r.status === "FLAGGED_FOR_REVIEW") ?? [];
+
   return (
-    <div>
-      <h1 style={{ fontSize: 22, marginBottom: 16 }}>HR Monitoring &amp; Reconciliation</h1>
-      {error && <p style={{ color: "#991b1b", marginBottom: 12 }}>{error}</p>}
+    <Box>
+      <Typography variant="h5" sx={{ mb: 2, fontWeight: 700 }}>
+        HR Monitoring &amp; Reconciliation
+      </Typography>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
 
       {/* Batches */}
-      <section style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 16, marginBottom: 10 }}>Vendor invoice batches</h2>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 700 }}>
+          Vendor invoice batches
+        </Typography>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <input
+        <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
+          <TextField
+            size="small"
             placeholder="Month, e.g. 2026-07"
             value={newMonth}
             onChange={(e) => setNewMonth(e.target.value)}
-            style={inputStyle}
           />
-          <button
+          <Button
+            variant="contained"
             disabled={busy || !newMonth}
-            onClick={() => withBusy(async () => { await api.post("/invoices/batches", { month: newMonth }); setNewMonth(""); })}
-            style={btn("#1d4ed8")}
+            onClick={() =>
+              withBusy(async () => {
+                await api.post("/invoices/batches", { month: newMonth });
+                setNewMonth("");
+              })
+            }
           >
             Create batch
-          </button>
-        </div>
+          </Button>
+        </Stack>
 
-        <div style={{ display: "flex", gap: 24 }}>
-          <div style={{ width: 240 }}>
-            {batches?.map((b) => (
-              <div
-                key={b.id}
-                onClick={() => setSelectedBatchId(b.id)}
-                style={{
-                  padding: "8px 10px",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  marginBottom: 6,
-                  background: selectedBatchId === b.id ? "#dbeafe" : "#f3f4f6",
-                  fontSize: 13,
-                }}
-              >
-                <strong>{b.month}</strong>
-                <div style={{ color: "#6b7280" }}>
-                  {b._count?.lines ?? 0} lines · Rs {b.totalAmount.toFixed(0)}
-                  {b.validatedAt && " · validated"}
-                  {b.escalatedToManCom && " · escalated"}
-                </div>
-              </div>
-            ))}
-          </div>
+        <Stack direction="row" spacing={3}>
+          <Paper variant="outlined" sx={{ width: 260 }}>
+            <List dense disablePadding>
+              {batches?.map((b) => (
+                <ListItemButton
+                  key={b.id}
+                  selected={selectedBatchId === b.id}
+                  onClick={() => setSelectedBatchId(b.id)}
+                >
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      {b.month}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {b._count?.lines ?? 0} lines · {formatCurrency(b.totalAmount)}
+                      {b.validatedAt && " · validated"}
+                      {b.escalatedToManCom && " · escalated"}
+                    </Typography>
+                  </Box>
+                </ListItemButton>
+              ))}
+            </List>
+          </Paper>
 
-          <div style={{ flex: 1 }}>
-            {!batchDetail && <p style={{ color: "#6b7280" }}>Select a batch to view its lines.</p>}
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            {!batchDetail && <Typography color="text.secondary">Select a batch to view its lines.</Typography>}
             {batchDetail && (
-              <div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                  <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-                    <input type="file" accept=".csv" onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)} />
-                  </label>
-                  <button
+              <Box>
+                <Stack direction="row" spacing={1} sx={{ mb: 1.5, flexWrap: "wrap", alignItems: "center" }}>
+                  <Button component="label" variant="outlined" size="small" startIcon={<UploadFileIcon />}>
+                    {uploadFile ? uploadFile.name : "Choose CSV"}
+                    <input
+                      type="file"
+                      accept=".csv"
+                      hidden
+                      onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                    />
+                  </Button>
+                  <Button
+                    variant="contained"
+                    size="small"
                     disabled={busy || !uploadFile}
                     onClick={() =>
                       withBusy(async () => {
@@ -128,205 +364,118 @@ export function HrMonitoringPage() {
                         setUploadFile(null);
                       })
                     }
-                    style={btn("#1d4ed8")}
                   >
                     Upload CSV
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="secondary"
+                    size="small"
                     disabled={busy}
                     onClick={() => withBusy(() => api.post(`/invoices/batches/${selectedBatchId}/match`))}
-                    style={btn("#6d28d9")}
                   >
                     Auto-match
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="small"
                     disabled={busy}
                     onClick={() => withBusy(() => api.post(`/invoices/batches/${selectedBatchId}/validate`))}
-                    style={btn("#047857")}
                   >
                     Validate batch
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    size="small"
                     disabled={busy}
                     onClick={() => withBusy(() => api.post(`/invoices/batches/${selectedBatchId}/escalate`))}
-                    style={btn("#92400e")}
                   >
                     Escalate to ManCom
-                  </button>
-                </div>
-                <p style={{ fontSize: 11, color: "#6b7280", marginBottom: 8 }}>
+                  </Button>
+                </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
                   CSV columns: vendorTripRef,date,from,to,amount,waitingTimeCharge
-                </p>
+                </Typography>
 
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>Date</th>
-                      <th style={th}>From</th>
-                      <th style={th}>To</th>
-                      <th style={th}>Amount</th>
-                      <th style={th}>Waiting</th>
-                      <th style={th}>Match</th>
-                      <th style={th}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {batchDetail.lines?.map((l) => (
-                      <tr key={l.id}>
-                        <td style={td}>{new Date(l.date).toLocaleDateString()}</td>
-                        <td style={td}>{l.fromLocation}</td>
-                        <td style={td}>{l.toLocation}</td>
-                        <td style={td}>{l.amount}</td>
-                        <td style={td}>{l.waitingTimeCharge}</td>
-                        <td style={td}>
-                          {l.matchStatus === "MATCHED" ? (
-                            <span style={{ color: "#065f46" }}>{l.matchedRequest?.employee?.name}</span>
-                          ) : (
-                            <span style={{ color: l.matchStatus === "DISPUTED" ? "#991b1b" : "#92400e" }}>
-                              {l.matchStatus}
-                            </span>
-                          )}
-                        </td>
-                        <td style={td}>
-                          {l.matchStatus !== "MATCHED" && (
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <input
-                                placeholder="Request id"
-                                value={matchInputs[l.id] ?? ""}
-                                onChange={(e) => setMatchInputs((m) => ({ ...m, [l.id]: e.target.value }))}
-                                style={{ ...inputStyle, width: 110, fontSize: 11 }}
-                              />
-                              <button
-                                disabled={busy || !matchInputs[l.id]}
-                                onClick={() =>
-                                  withBusy(() =>
-                                    api.post(`/invoices/lines/${l.id}/match`, { requestId: matchInputs[l.id] })
-                                  )
-                                }
-                                style={btn("#1d4ed8")}
-                              >
-                                Match
-                              </button>
-                              <button
-                                disabled={busy}
-                                onClick={() => withBusy(() => api.post(`/invoices/lines/${l.id}/dispute`))}
-                                style={btn("#991b1b")}
-                              >
-                                Dispute
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                <DataGrid
+                  rows={batchDetail.lines ?? []}
+                  columns={invoiceLineColumns}
+                  density="compact"
+                  autoHeight
+                  hideFooter={(batchDetail.lines?.length ?? 0) <= 100}
+                  disableRowSelectionOnClick
+                />
+              </Box>
             )}
-          </div>
-        </div>
-      </section>
+          </Box>
+        </Stack>
+      </Box>
 
       {/* Requests eligible for flagging */}
-      <section style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 16, marginBottom: 10 }}>Booked / completed trips</h2>
-        <table style={table}>
-          <thead>
-            <tr>
-              <th style={th}>Employee</th>
-              <th style={th}>Journey</th>
-              <th style={th}>Status</th>
-              <th style={th}>Request ID</th>
-              <th style={th}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {completedRequests?.map((r) => (
-              <tr key={r.id}>
-                <td style={td}>{r.employee?.name}</td>
-                <td style={td}>
-                  {r.journeyFrom} → {r.journeyTo}
-                </td>
-                <td style={td}>
-                  <StatusBadge status={r.status} />
-                </td>
-                <td style={{ ...td, fontFamily: "monospace", fontSize: 11 }}>{r.id}</td>
-                <td style={td}>
-                  {r.status !== "FLAGGED_FOR_REVIEW" ? (
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        withBusy(async () => {
-                          await api.post(`/requests/${r.id}/flag-for-review`);
-                          reloadCompleted();
-                        })
-                      }
-                      style={btn("#92400e")}
-                    >
-                      Flag for review
-                    </button>
-                  ) : (
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        withBusy(async () => {
-                          await api.post(`/requests/${r.id}/clear-review`);
-                          reloadCompleted();
-                        })
-                      }
-                      style={btn("#047857")}
-                    >
-                      Clear
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 700 }}>
+          Booked / completed trips
+        </Typography>
+        <DataGrid
+          rows={completedRequests ?? []}
+          columns={requestColumns}
+          density="compact"
+          autoHeight
+          hideFooter={(completedRequests?.length ?? 0) <= 100}
+          disableRowSelectionOnClick
+        />
+      </Box>
 
       {/* Flagged -> confirm personal use */}
-      <section style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 16, marginBottom: 10 }}>Flagged for review — confirm personal use</h2>
-        {completedRequests?.filter((r) => r.status === "FLAGGED_FOR_REVIEW").length === 0 && (
-          <p style={{ color: "#6b7280" }}>No flagged requests.</p>
-        )}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {completedRequests
-            ?.filter((r) => r.status === "FLAGGED_FOR_REVIEW")
-            .map((r) => {
-              const form = confirmForm[r.id] ?? { amount: "", method: "CASHIER_PAYMENT", consent: "" };
-              return (
-                <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
-                  <strong>{r.employee?.name}</strong> — {r.journeyFrom} → {r.journeyTo}
-                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <input
-                      placeholder="Amount"
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 700 }}>
+          Flagged for review — confirm personal use
+        </Typography>
+        {flaggedRequests.length === 0 && <Typography color="text.secondary">No flagged requests.</Typography>}
+        <Stack spacing={1.25}>
+          {flaggedRequests.map((r) => {
+            const form = confirmForm[r.id] ?? { amount: "", method: "CASHIER_PAYMENT", consent: "" };
+            return (
+              <Card key={r.id} variant="outlined">
+                <CardContent>
+                  <Typography sx={{ fontWeight: 700 }}>
+                    {r.employee?.name} — {r.journeyFrom} → {r.journeyTo}
+                  </Typography>
+                  <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap", alignItems: "center" }}>
+                    <TextField
+                      size="small"
+                      label="Amount"
                       type="number"
                       value={form.amount}
                       onChange={(e) => setConfirmForm((s) => ({ ...s, [r.id]: { ...form, amount: e.target.value } }))}
-                      style={{ ...inputStyle, width: 100 }}
+                      sx={{ width: 120 }}
                     />
-                    <select
+                    <TextField
+                      size="small"
+                      select
+                      label="Recovery method"
                       value={form.method}
                       onChange={(e) => setConfirmForm((s) => ({ ...s, [r.id]: { ...form, method: e.target.value } }))}
-                      style={inputStyle}
+                      sx={{ width: 190 }}
                     >
-                      <option value="CASHIER_PAYMENT">Cashier payment</option>
-                      <option value="SALARY_DEDUCTION">Salary deduction</option>
-                    </select>
+                      <MenuItem value="CASHIER_PAYMENT">Cashier payment</MenuItem>
+                      <MenuItem value="SALARY_DEDUCTION">Salary deduction</MenuItem>
+                    </TextField>
                     {form.method === "SALARY_DEDUCTION" && (
-                      <input
-                        placeholder="Employee consent ref"
+                      <TextField
+                        size="small"
+                        label="Employee consent ref"
                         value={form.consent}
                         onChange={(e) =>
                           setConfirmForm((s) => ({ ...s, [r.id]: { ...form, consent: e.target.value } }))
                         }
-                        style={inputStyle}
                       />
                     )}
-                    <button
+                    <Button
+                      variant="contained"
+                      color="error"
                       disabled={busy || !form.amount}
                       onClick={() =>
                         withBusy(async () => {
@@ -339,78 +488,31 @@ export function HrMonitoringPage() {
                           reloadCharges();
                         })
                       }
-                      style={btn("#991b1b")}
                     >
                       Confirm personal use
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-        </div>
-      </section>
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </Stack>
+      </Box>
 
       {/* Charges ledger */}
-      <section>
-        <h2 style={{ fontSize: 16, marginBottom: 10 }}>Personal-use charges</h2>
-        <table style={table}>
-          <thead>
-            <tr>
-              <th style={th}>Employee</th>
-              <th style={th}>Amount</th>
-              <th style={th}>Method</th>
-              <th style={th}>Status</th>
-              <th style={th}>Disciplinary</th>
-              <th style={th}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {charges?.map((c) => (
-              <tr key={c.id}>
-                <td style={td}>{c.employee?.name}</td>
-                <td style={td}>{c.amount}</td>
-                <td style={td}>{c.recoveryMethod.replace("_", " ")}</td>
-                <td style={td}>{c.status}</td>
-                <td style={td}>{c.disciplinaryFlag ? "⚠ repeat abuse" : ""}</td>
-                <td style={td}>
-                  {c.status === "PENDING" && (
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        withBusy(async () => {
-                          await api.patch(`/personal-use-charges/${c.id}/recover`);
-                          reloadCharges();
-                        })
-                      }
-                      style={btn("#047857")}
-                    >
-                      Mark recovered
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-    </div>
+      <Box>
+        <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 700 }}>
+          Personal-use charges
+        </Typography>
+        <DataGrid
+          rows={charges ?? []}
+          columns={chargeColumns}
+          density="compact"
+          autoHeight
+          hideFooter={(charges?.length ?? 0) <= 100}
+          disableRowSelectionOnClick
+        />
+      </Box>
+    </Box>
   );
-}
-
-const table: React.CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
-const th: React.CSSProperties = { textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: "6px 8px", color: "#6b7280" };
-const td: React.CSSProperties = { borderBottom: "1px solid #f3f4f6", padding: "6px 8px" };
-const inputStyle: React.CSSProperties = { padding: "6px 10px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13 };
-
-function btn(color: string): React.CSSProperties {
-  return {
-    padding: "6px 12px",
-    borderRadius: 6,
-    border: "none",
-    background: color,
-    color: "#fff",
-    fontWeight: 600,
-    fontSize: 12,
-    cursor: "pointer",
-  };
 }
