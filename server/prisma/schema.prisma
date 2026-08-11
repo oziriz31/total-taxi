@@ -1,0 +1,152 @@
+// Taxi Management module — data model
+// Mirrors docs/taxi-management-module-spec.md section 1.
+// SQLite for local dev; swap `provider`/`url` for Postgres/SQL Server when integrating
+// into the shared HR platform.
+//
+// Note: SQLite has no native enum support in Prisma, so the enum-shaped
+// fields below (reasonCode, status, recoveryMethod, matchStatus) are plain
+// strings. Their valid values are defined once in src/lib/enums.ts and
+// validated at the API boundary with zod — see that file for the mapping
+// back to real Prisma enums once this moves to Postgres/SQL Server.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Local stub for the Employee/Org core. In the target platform this becomes
+// a reference into the shared Employee module (see spec section 8).
+model Employee {
+  id                    String   @id @default(cuid())
+  name                  String
+  position              String
+  department            String
+  email                 String   @unique
+  managerId             String?
+  manager               Employee?  @relation("ManagerReports", fields: [managerId], references: [id])
+  reports               Employee[] @relation("ManagerReports")
+  isManCom              Boolean  @default(false)
+  hasCompanyVehicle     Boolean  @default(false)
+  hasTransportAllowance Boolean  @default(false)
+  createdAt             DateTime @default(now())
+
+  bookingRequests   TaxiBookingRequest[] @relation("Requester")
+  approvals         TaxiBookingRequest[] @relation("Approver")
+  personalUseCharges PersonalUseCharge[]
+  invoiceBatchesValidated TaxiVendorInvoiceBatch[]
+  auditEvents       AuditEvent[]
+}
+
+model TaxiBookingRequest {
+  id                   String        @id @default(cuid())
+
+  employeeId           String
+  employee             Employee      @relation("Requester", fields: [employeeId], references: [id])
+
+  // Snapshot fields — captured at submission time, not live-joined,
+  // matching the paper form's point-in-time intent.
+  positionSnapshot     String
+  departmentSnapshot   String
+
+  reasonCode           String        // ReasonCode — see src/lib/enums.ts
+  justification        String?       // free text, notably used for reason H
+
+  declarationConfirmed Boolean       @default(false)
+
+  journeyFrom          String
+  journeyTo            String
+  travelDate           DateTime
+  pickupTime           DateTime
+  taxiContactNumber    String?
+
+  status               String        @default("DRAFT") // RequestStatus — see src/lib/enums.ts
+  lateBooking          Boolean       @default(false)
+
+  approverId           String?
+  approver             Employee?     @relation("Approver", fields: [approverId], references: [id])
+  approvedAt           DateTime?
+  rejectionReason      String?
+
+  // Reason G only: work-attendance clearance is a distinct gate from the
+  // booking approval above (spec section 3.2).
+  workAttendanceClearedAt DateTime?
+
+  actualPickupAt       DateTime?
+  actualDropoffAt      DateTime?
+
+  personalUseFlag      Boolean       @default(false)
+  personalUseCharge    PersonalUseCharge?
+
+  sharedGroupId        String?       // requests sharing one ride share this id
+
+  submittedAt          DateTime?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  invoiceLines         TaxiVendorInvoiceLine[]
+  auditEvents          AuditEvent[]
+}
+
+model TaxiVendorInvoiceBatch {
+  id                 String   @id @default(cuid())
+  month              String   // e.g. "2026-06"
+  receivedAt         DateTime @default(now())
+  totalAmount        Float    @default(0)
+  validatedByHRId    String?
+  validatedBy        Employee? @relation(fields: [validatedByHRId], references: [id])
+  validatedAt        DateTime?
+  escalatedToManCom  Boolean  @default(false)
+
+  lines              TaxiVendorInvoiceLine[]
+}
+
+model TaxiVendorInvoiceLine {
+  id                  String       @id @default(cuid())
+  batchId             String
+  batch               TaxiVendorInvoiceBatch @relation(fields: [batchId], references: [id])
+
+  vendorTripRef       String?
+  date                DateTime
+  fromLocation        String
+  toLocation           String
+  amount              Float
+  waitingTimeCharge   Float        @default(0)
+
+  matchedRequestId    String?
+  matchedRequest      TaxiBookingRequest? @relation(fields: [matchedRequestId], references: [id])
+  matchStatus         String       @default("UNMATCHED") // MatchStatus — see src/lib/enums.ts
+
+  createdAt           DateTime     @default(now())
+}
+
+model PersonalUseCharge {
+  id                  String         @id @default(cuid())
+  requestId           String         @unique
+  request             TaxiBookingRequest @relation(fields: [requestId], references: [id])
+  employeeId          String
+  employee            Employee       @relation(fields: [employeeId], references: [id])
+  amount              Float
+  recoveryMethod      String         // RecoveryMethod — see src/lib/enums.ts
+  employeeConsentRef  String?
+  status              String         @default("PENDING") // ChargeStatus — see src/lib/enums.ts
+  disciplinaryFlag    Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+}
+
+// Append-only audit trail — replaces the paper form's wet-signature trail
+// (spec section 2).
+model AuditEvent {
+  id            String   @id @default(cuid())
+  requestId     String
+  request       TaxiBookingRequest @relation(fields: [requestId], references: [id])
+  actorId       String
+  actor         Employee @relation(fields: [actorId], references: [id])
+  fromStatus    String?  // RequestStatus — see src/lib/enums.ts
+  toStatus      String   // RequestStatus — see src/lib/enums.ts
+  note          String?
+  createdAt     DateTime @default(now())
+}
